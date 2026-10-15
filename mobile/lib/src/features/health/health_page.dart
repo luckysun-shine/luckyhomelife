@@ -4,6 +4,8 @@ import 'package:uuid/uuid.dart';
 import '../../core/api_client.dart';
 import '../../core/session_controller.dart';
 import '../../core/notification_service.dart';
+import '../../theme.dart';
+import '../../widgets/ui.dart';
 
 class HealthPage extends StatefulWidget {
   const HealthPage({super.key, required this.session, required this.members});
@@ -222,9 +224,7 @@ class _HealthPageState extends State<HealthPage> {
       },
     );
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(status == 'taken' ? '已记录服药' : '已记录跳过')),
-      );
+      await showAppSnackBar(context, status == 'taken' ? '已记录服药' : '已记录跳过');
     }
   }
 
@@ -303,66 +303,82 @@ class _HealthPageState extends State<HealthPage> {
   }
 
   @override
-  Widget build(BuildContext c) {
+  Widget build(BuildContext context) {
     final profile = data?['profile'] as Map<String, dynamic>?;
     final visits = (data?['visits'] as List?) ?? [];
     final plans = (data?['medicationPlans'] as List?) ?? [];
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('把关心，放在日常'),
-        actions: [
-          IconButton(
-            tooltip: '档案授权',
-            onPressed: grantAccess,
-            icon: const Icon(Icons.manage_accounts_outlined),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('健康档案')),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: DropdownButtonFormField<String>(
-              initialValue: memberId,
-              decoration: const InputDecoration(labelText: '家庭成员'),
-              items: widget.members
-                  .map(
-                    (m) => DropdownMenuItem(
-                      value: m['id'] as String,
-                      child: Text(m['displayName']),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (v) {
-                memberId = v;
-                load();
-              },
-            ),
-          ),
           Expanded(
             child: loading
                 ? const Center(child: CircularProgressIndicator())
                 : error != null
-                ? Center(child: Text(error!))
+                ? ErrorRetry(message: error!, onRetry: load)
                 : ListView(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
                     children: [
-                      Card(
-                        child: ListTile(
-                          title: const Text('基础健康资料'),
-                          subtitle: Text(
-                            '过敏：${profile?['allergies'] ?? '未记录'}\n慢性病：${profile?['chronicConditions'] ?? '未记录'}',
-                          ),
-                          trailing: IconButton(
-                            onPressed: editProfile,
-                            icon: const Icon(Icons.edit_outlined),
-                          ),
+                      const PageHeader(
+                        eyebrow: '家庭健康 · 授权后才共享',
+                        title: '把关心，放在日常',
+                      ),
+                      const InfoBanner(
+                        icon: Icons.lock_outline_rounded,
+                        text: '健康是私事。档案默认不公开，需要本人或监护人授权后，家人才能查看。',
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                        initialValue: memberId,
+                        decoration: const InputDecoration(labelText: '家庭成员'),
+                        items: widget.members
+                            .map(
+                              (member) => DropdownMenuItem(
+                                value: member['id'] as String,
+                                child: Text(member['displayName'] as String),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          memberId = value;
+                          load();
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      SectionTitle(
+                        '今天的照护',
+                        actionLabel: '档案授权',
+                        onAction: grantAccess,
+                      ),
+                      SoftCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '过敏：${profile?['allergies'] ?? '未记录'}',
+                              style: Theme.of(context).textTheme.bodyLarge,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '慢性病：${profile?['chronicConditions'] ?? '未记录'}',
+                            ),
+                            const SizedBox(height: 12),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: TextButton.icon(
+                                onPressed: editProfile,
+                                icon: const Icon(Icons.edit_outlined),
+                                label: const Text('编辑基础资料'),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
+                      const SizedBox(height: 8),
                       Row(
                         children: [
                           Expanded(
-                            child: ElevatedButton.icon(
+                            child: FilledButton.icon(
                               onPressed: addVisit,
                               icon: const Icon(Icons.local_hospital_outlined),
                               label: const Text('记录就诊'),
@@ -378,20 +394,29 @@ class _HealthPageState extends State<HealthPage> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 18),
-                      Text('用药计划', style: Theme.of(c).textTheme.titleLarge),
-                      if (plans.isEmpty) const ListTile(title: Text('暂无用药计划')),
-                      ...plans.map(
-                        (p) => Card(
+                      const SectionTitle('用药计划'),
+                      if (plans.isEmpty)
+                        const EmptyState(
+                          icon: Icons.medication_outlined,
+                          message: '还没有用药计划。',
+                        ),
+                      for (final raw in plans)
+                        SoftCard(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
                           child: ListTile(
-                            leading: const Icon(Icons.alarm),
-                            title: Text(p['medicationName']),
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(
+                              Icons.alarm,
+                              color: brandCoralDeep,
+                            ),
+                            title: Text('${raw['medicationName']}'),
                             subtitle: Text(
-                              '${p['dose']} · ${(p['scheduleTimes'] as List).join('、')}',
+                              '${raw['dose']} · ${(raw['scheduleTimes'] as List).join('、')}',
                             ),
                             trailing: PopupMenuButton<String>(
+                              tooltip: '记录服药',
                               onSelected: (value) => confirmMedication(
-                                (p as Map).cast<String, dynamic>(),
+                                (raw as Map).cast<String, dynamic>(),
                                 value,
                               ),
                               itemBuilder: (_) => const [
@@ -407,19 +432,33 @@ class _HealthPageState extends State<HealthPage> {
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 18),
-                      Text('最近就诊', style: Theme.of(c).textTheme.titleLarge),
-                      if (visits.isEmpty) const ListTile(title: Text('暂无就诊记录')),
-                      ...visits.map(
-                        (v) => Card(
-                          child: ListTile(
-                            title: Text(v['hospital']),
-                            subtitle: Text(
-                              '${DateFormat('yyyy-MM-dd').format(DateTime.parse(v['visitedAt']).toLocal())}${v['diagnosis'] == null ? '' : ' · ${v['diagnosis']}'}',
-                            ),
+                      const SectionTitle('最近就诊'),
+                      if (visits.isEmpty)
+                        const EmptyState(
+                          icon: Icons.local_hospital_outlined,
+                          message: '暂无就诊记录。',
+                        ),
+                      for (final raw in visits)
+                        SoftCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${raw['hospital']}',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${DateFormat('yyyy-MM-dd').format(DateTime.parse(raw['visitedAt'] as String).toLocal())}${raw['diagnosis'] == null ? '' : ' · ${raw['diagnosis']}'}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
                           ),
                         ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '这里的记录只供家庭照护参考，不构成医疗建议。',
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
                   ),

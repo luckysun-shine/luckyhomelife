@@ -5,10 +5,13 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/api_client.dart';
 import '../../core/session_controller.dart';
+import '../../theme.dart';
+import '../../widgets/ui.dart';
 
 class RecordsPage extends StatefulWidget {
-  const RecordsPage({super.key, required this.session});
+  const RecordsPage({super.key, required this.session, this.composer});
   final SessionController session;
+  final ValueNotifier<String?>? composer;
   @override
   State<RecordsPage> createState() => _RecordsPageState();
 }
@@ -21,7 +24,20 @@ class _RecordsPageState extends State<RecordsPage> {
   @override
   void initState() {
     super.initState();
+    widget.composer?.addListener(_consumeComposer);
     load();
+  }
+
+  @override
+  void dispose() {
+    widget.composer?.removeListener(_consumeComposer);
+    super.dispose();
+  }
+
+  void _consumeComposer() {
+    if (widget.composer?.value != 'record') return;
+    widget.composer?.value = null;
+    add();
   }
 
   Future<void> load() async {
@@ -158,79 +174,56 @@ class _RecordsPageState extends State<RecordsPage> {
           mime,
         );
       }
+      if (mounted) await showAppSnackBar(context, '已发布到家庭时间线');
       await load();
     }
   }
 
   @override
-  Widget build(BuildContext c) => Scaffold(
-    appBar: AppBar(title: const Text('日子，有迹可循')),
+  Widget build(BuildContext context) => Scaffold(
     floatingActionButton: FloatingActionButton(
+      tooltip: '发布家庭记录',
       onPressed: add,
       child: const Icon(Icons.add),
     ),
     body: loading
         ? const Center(child: CircularProgressIndicator())
         : error != null
-        ? Center(child: Text(error!))
+        ? ErrorRetry(message: error!, onRetry: load)
         : RefreshIndicator(
             onRefresh: load,
-            child: items.isEmpty
-                ? ListView(
-                    children: const [
-                      SizedBox(height: 180),
-                      Center(child: Text('还没有家庭记录，写下第一件小事吧')),
-                    ],
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 28, 20, 96),
+              children: [
+                PageHeader(
+                  eyebrow:
+                      '${widget.session.selectedFamily?.name ?? '我们家'} · 家庭时间线',
+                  title: '日子，有迹可循',
+                ),
+                if (items.isEmpty)
+                  EmptyState(
+                    icon: Icons.auto_stories_outlined,
+                    message: '还没有家庭记录，写下第一件小事吧。',
+                    actionLabel: '发布记录',
+                    onAction: add,
                   )
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
-                    itemCount: items.length,
-                    itemBuilder: (x, i) {
-                      final e = items[i];
-                      return Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    e['createdByName'],
-                                    style: Theme.of(x).textTheme.titleMedium,
-                                  ),
-                                  Text(
-                                    DateFormat('M月d日').format(
-                                      DateTime.parse(e['happenedAt']).toLocal(),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              if ((e['media'] as List).isNotEmpty) ...[
-                                const SizedBox(height: 12),
-                                _ProtectedPhoto(
-                                  api: widget.session.api,
-                                  familyId: widget.session.selectedFamilyId!,
-                                  mediaId: (e['media'] as List).first['id'],
-                                ),
-                              ],
-                              const SizedBox(height: 12),
-                              Text(e['body'] ?? ''),
-                              const SizedBox(height: 8),
-                              Text(
-                                _visibilityName(
-                                  e['visibility'] as String? ?? 'family',
-                                ),
-                                style: Theme.of(x).textTheme.bodySmall,
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+                else
+                  for (final raw in items)
+                    SoftCard(
+                      child: _RecordBody(
+                        item: (raw as Map).cast<String, dynamic>(),
+                        session: widget.session,
+                        visibilityName: _visibilityName,
+                      ),
+                    ),
+                const SizedBox(height: 8),
+                Text(
+                  '每个普通日子，都在慢慢发光。',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
           ),
   );
 
@@ -243,6 +236,67 @@ class _RecordsPageState extends State<RecordsPage> {
         'guardians': '本人和监护人可见',
       }[value] ??
       value;
+}
+
+class _RecordBody extends StatelessWidget {
+  const _RecordBody({
+    required this.item,
+    required this.session,
+    required this.visibilityName,
+  });
+
+  final Map<String, dynamic> item;
+  final SessionController session;
+  final String Function(String value) visibilityName;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = (item['media'] as List?) ?? const [];
+    final happened = DateTime.parse(item['happenedAt'] as String).toLocal();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: brandMist,
+              foregroundColor: brandTealDeep,
+              child: Text('${item['createdByName'] ?? '家'}'.characters.first),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${item['createdByName'] ?? '家人'}',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  Text(
+                    '${DateFormat('M月d日 HH:mm').format(happened)} · ${visibilityName(item['visibility'] as String? ?? 'family')}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        if (media.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _ProtectedPhoto(
+            api: session.api,
+            familyId: session.selectedFamilyId!,
+            mediaId: media.first['id'] as String,
+          ),
+        ],
+        const SizedBox(height: 12),
+        Text(
+          '${item['body'] ?? ''}',
+          style: Theme.of(context).textTheme.bodyLarge,
+        ),
+      ],
+    );
+  }
 }
 
 class _ProtectedPhoto extends StatelessWidget {

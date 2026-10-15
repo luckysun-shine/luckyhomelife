@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../core/api_client.dart';
 import '../../core/session_controller.dart';
+import '../../theme.dart';
+import '../../widgets/ui.dart';
 import '../health/health_page.dart';
 import '../growth/growth_page.dart';
+import '../ledger/ledger_page.dart';
 
 class FamilyPage extends StatefulWidget {
   const FamilyPage({super.key, required this.session});
@@ -376,6 +379,9 @@ class _FamilyPageState extends State<FamilyPage> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+            ),
             child: const Text('确认移除'),
           ),
         ],
@@ -435,159 +441,215 @@ class _FamilyPageState extends State<FamilyPage> {
 
   @override
   Widget build(BuildContext context) {
+    final names = _members
+        .map((member) => member['displayName'] as String)
+        .take(5)
+        .join('、');
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('我们这一家'),
-        actions: [
-          IconButton(
-            onPressed: widget.session.logout,
-            tooltip: '退出登录',
-            icon: const Icon(Icons.logout),
-          ),
-        ],
-      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(_error!),
-                  const SizedBox(height: 12),
-                  FilledButton(
-                    onPressed: _loadFamilies,
-                    child: const Text('重试'),
-                  ),
-                ],
-              ),
-            )
+          ? ErrorRetry(message: _error!, onRetry: _loadFamilies)
           : _families.isEmpty
           ? _EmptyFamily(onCreate: _createFamily, onJoin: _joinFamily)
           : RefreshIndicator(
               onRefresh: _loadFamilies,
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
+                padding: const EdgeInsets.fromLTRB(20, 28, 20, 28),
                 children: [
-                  DropdownButtonFormField<String>(
-                    initialValue: _selectedFamilyId,
-                    decoration: const InputDecoration(labelText: '当前家庭'),
-                    items: _families
-                        .map(
-                          (family) => DropdownMenuItem(
-                            value: family['id'] as String,
-                            child: Text(family['name'] as String),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) async {
-                      _selectedFamilyId = value;
-                      if (value != null) {
-                        await widget.session.selectFamily(value);
-                      }
-                      await _loadMembers();
-                      setState(() {});
-                    },
+                  PageHeader(
+                    eyebrow:
+                        '${widget.session.selectedFamily?.name ?? '家庭'} · 家庭中心',
+                    title: '我们这一家',
+                    trailing: IconButton(
+                      tooltip: '退出登录',
+                      onPressed: widget.session.logout,
+                      icon: const Icon(Icons.logout),
+                    ),
                   ),
-                  const SizedBox(height: 20),
-                  Text('家庭成员', style: Theme.of(context).textTheme.titleLarge),
-                  const SizedBox(height: 8),
-                  ..._members.map(
-                    (member) => Card(
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          child: Text(
-                            (member['displayName'] as String).characters.first,
+                  if (_families.length > 1) ...[
+                    DropdownButtonFormField<String>(
+                      initialValue: _selectedFamilyId,
+                      decoration: const InputDecoration(labelText: '当前家庭'),
+                      items: _families
+                          .map(
+                            (family) => DropdownMenuItem(
+                              value: family['id'] as String,
+                              child: Text(family['name'] as String),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) async {
+                        _selectedFamilyId = value;
+                        if (value != null) {
+                          await widget.session.selectFamily(value);
+                        }
+                        await _loadMembers();
+                        setState(() {});
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  SoftCard(
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? null
+                        : brandMist,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '有你们，就是家。',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${_members.length} 位家人',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                        if (names.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            names,
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(color: brandTealDeep),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  SectionTitle(
+                    '家人',
+                    actionLabel: '邀请家人',
+                    onAction: _createInvite,
+                  ),
+                  SoftCard(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Column(
+                      children: [
+                        for (final member in _members)
+                          ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: brandPeach,
+                              foregroundColor: brandCoralDeep,
+                              child: Text(
+                                (member['displayName'] as String)
+                                    .characters
+                                    .first,
+                              ),
+                            ),
+                            title: Text(member['displayName'] as String),
+                            subtitle: Text(_roleName(member['role'] as String)),
+                            trailing:
+                                widget.session.selectedFamily?.role == 'admin'
+                                ? PopupMenuButton<String>(
+                                    tooltip: '管理成员',
+                                    onSelected: (action) =>
+                                        _handleMemberAction(action, member),
+                                    itemBuilder: (_) => [
+                                      const PopupMenuItem(
+                                        value: 'edit',
+                                        child: Text('编辑成员'),
+                                      ),
+                                      if (member['accountBound'] == true &&
+                                          member['id'] !=
+                                              widget
+                                                  .session
+                                                  .selectedFamily
+                                                  ?.memberId &&
+                                          member['role'] != 'admin')
+                                        const PopupMenuItem(
+                                          value: 'transfer',
+                                          child: Text('交接管理员'),
+                                        ),
+                                      if (member['id'] !=
+                                              widget
+                                                  .session
+                                                  .selectedFamily
+                                                  ?.memberId &&
+                                          member['role'] != 'admin')
+                                        const PopupMenuItem(
+                                          value: 'remove',
+                                          child: Text('移除成员'),
+                                        ),
+                                    ],
+                                  )
+                                : Icon(
+                                    member['accountBound'] == true
+                                        ? Icons.verified_user_outlined
+                                        : Icons.person_add_alt_outlined,
+                                    color: brandTealDeep,
+                                  ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SectionTitle('家的共同空间'),
+                  SoftCard(
+                    padding: EdgeInsets.zero,
+                    child: Column(
+                      children: [
+                        ListTile(
+                          leading: const Icon(
+                            Icons.account_balance_wallet_outlined,
+                            color: brandTealDeep,
+                          ),
+                          title: const Text('家庭账本'),
+                          subtitle: const Text('日常开销，记在同一个本子里'),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  LedgerPage(session: widget.session),
+                            ),
                           ),
                         ),
-                        title: Text(member['displayName'] as String),
-                        subtitle: Text(_roleName(member['role'] as String)),
-                        trailing: widget.session.selectedFamily?.role == 'admin'
-                            ? PopupMenuButton<String>(
-                                onSelected: (action) =>
-                                    _handleMemberAction(action, member),
-                                itemBuilder: (_) => [
-                                  const PopupMenuItem(
-                                    value: 'edit',
-                                    child: Text('编辑成员'),
-                                  ),
-                                  if (member['accountBound'] == true &&
-                                      member['id'] !=
-                                          widget
-                                              .session
-                                              .selectedFamily
-                                              ?.memberId &&
-                                      member['role'] != 'admin')
-                                    const PopupMenuItem(
-                                      value: 'transfer',
-                                      child: Text('交接管理员'),
-                                    ),
-                                  if (member['id'] !=
-                                          widget
-                                              .session
-                                              .selectedFamily
-                                              ?.memberId &&
-                                      member['role'] != 'admin')
-                                    const PopupMenuItem(
-                                      value: 'remove',
-                                      child: Text('移除成员'),
-                                    ),
-                                ],
-                              )
-                            : Icon(
-                                member['accountBound'] == true
-                                    ? Icons.verified_user_outlined
-                                    : Icons.person_add_alt_outlined,
+                        const Divider(height: 1),
+                        ListTile(
+                          leading: const Icon(
+                            Icons.health_and_safety_outlined,
+                            color: brandCoralDeep,
+                          ),
+                          title: const Text('健康档案'),
+                          subtitle: const Text('体检、就诊和用药，授权后才共享'),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => HealthPage(
+                                session: widget.session,
+                                members: _members,
                               ),
-                      ),
+                            ),
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        ListTile(
+                          leading: const Icon(
+                            Icons.auto_awesome_outlined,
+                            color: brandCoral,
+                          ),
+                          title: const Text('成长记录'),
+                          subtitle: const Text('慢慢长大的脚印'),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => GrowthPage(
+                                session: widget.session,
+                                members: _members,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.health_and_safety_outlined),
-                      title: const Text('家庭健康档案'),
-                      subtitle: const Text('体检、就诊、用药计划和服药确认'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => HealthPage(
-                            session: widget.session,
-                            members: _members,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.auto_awesome_outlined),
-                      title: const Text('成长记录'),
-                      subtitle: const Text('保存孩子和家人的成长里程碑'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => GrowthPage(
-                            session: widget.session,
-                            members: _members,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
                   OutlinedButton.icon(
                     onPressed: _createManagedMember,
                     icon: const Icon(Icons.person_add_outlined),
                     label: const Text('添加儿童或长辈档案'),
-                  ),
-                  const SizedBox(height: 8),
-                  ElevatedButton.icon(
-                    onPressed: _createInvite,
-                    icon: const Icon(Icons.person_add_alt),
-                    label: const Text('邀请家人'),
                   ),
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
@@ -613,28 +675,59 @@ class _FamilyPageState extends State<FamilyPage> {
       role;
 }
 
-class _EmptyFamily extends StatelessWidget {
+class _EmptyFamily extends StatefulWidget {
   const _EmptyFamily({required this.onCreate, required this.onJoin});
   final VoidCallback onCreate;
   final VoidCallback onJoin;
 
   @override
-  Widget build(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(28),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.family_restroom, size: 72),
-          const SizedBox(height: 20),
-          Text('建立你的家庭空间', style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 8),
-          const Text('创建一个新家庭，或者使用家人发来的邀请码加入。', textAlign: TextAlign.center),
-          const SizedBox(height: 24),
-          ElevatedButton(onPressed: onCreate, child: const Text('创建家庭')),
-          TextButton(onPressed: onJoin, child: const Text('使用邀请码加入')),
-        ],
-      ),
-    ),
-  );
+  State<_EmptyFamily> createState() => _EmptyFamilyState();
+}
+
+class _EmptyFamilyState extends State<_EmptyFamily> {
+  int _mode = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 36, 20, 28),
+      children: [
+        const PageHeader(eyebrow: '欢迎回家', title: '从一个家开始'),
+        SegmentControl(
+          labels: const ['创建家庭', '加入家庭'],
+          index: _mode,
+          onChanged: (value) => setState(() => _mode = value),
+        ),
+        const SizedBox(height: 16),
+        SoftCard(
+          color: Theme.of(context).brightness == Brightness.dark
+              ? null
+              : brandMist,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const BrandMark(size: 48),
+              const SizedBox(height: 12),
+              Text(
+                _mode == 0 ? '为我们的日常留一个位置' : '家人已经准备好了',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _mode == 0
+                    ? '先创建家庭，再邀请家人。每个人都能用适合自己的方式参与。'
+                    : '输入家人发来的邀请码，用你的家庭称呼加入。',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        FilledButton(
+          onPressed: _mode == 0 ? widget.onCreate : widget.onJoin,
+          child: Text(_mode == 0 ? '创建家庭' : '使用邀请码加入'),
+        ),
+      ],
+    );
+  }
 }

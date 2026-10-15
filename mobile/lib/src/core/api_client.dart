@@ -1,6 +1,9 @@
-import 'dart:convert';
-import 'dart:io';
 import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+
 import 'offline_store.dart';
 
 class ApiException implements Exception {
@@ -17,21 +20,24 @@ class ApiClient {
   ApiClient({
     String? baseUrl,
     this.accessToken,
-    HttpClient? httpClient,
+    http.Client? httpClient,
     OfflineStore? offlineStore,
-  }) : baseUrl =
-           baseUrl ??
-           const String.fromEnvironment(
-             'API_BASE_URL',
-             defaultValue: 'http://10.0.2.2:8080',
-           ),
-       _httpClient = httpClient ?? HttpClient(),
+  }) : baseUrl = _resolveBaseUrl(baseUrl),
+       _httpClient = httpClient ?? http.Client(),
        _offlineStore = offlineStore ?? OfflineStore.shared;
 
   final String baseUrl;
   final String? accessToken;
-  final HttpClient _httpClient;
+  final http.Client _httpClient;
   final OfflineStore _offlineStore;
+
+  static String _resolveBaseUrl(String? baseUrl) {
+    final configured =
+        baseUrl ??
+        const String.fromEnvironment('API_BASE_URL', defaultValue: '');
+    if (configured.isNotEmpty) return configured;
+    return kIsWeb ? 'http://localhost:8080' : 'http://10.0.2.2:8080';
+  }
 
   ApiClient withToken(String token) => ApiClient(
     baseUrl: baseUrl,
@@ -81,19 +87,15 @@ class ApiClient {
     String mimeType,
   ) async {
     try {
-      final request = await _httpClient.postUrl(Uri.parse('$baseUrl$path'));
-      request.headers.contentType = ContentType.parse(mimeType);
-      if (accessToken != null) {
-        request.headers.set(
-          HttpHeaders.authorizationHeader,
-          'Bearer $accessToken',
-        );
-      }
-      request.add(bytes);
-      final response = await request.close();
-      final json =
-          jsonDecode(await response.transform(utf8.decoder).join())
-              as Map<String, dynamic>;
+      final response = await _httpClient.post(
+        Uri.parse('$baseUrl$path'),
+        headers: {
+          'Content-Type': mimeType,
+          if (accessToken != null) 'Authorization': 'Bearer $accessToken',
+        },
+        body: bytes,
+      );
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw ApiException(
           (json['error'] as Map<String, dynamic>?)?['message'] as String? ??
@@ -102,24 +104,22 @@ class ApiClient {
         );
       }
       return json;
-    } on SocketException {
+    } on http.ClientException {
       throw const ApiException('照片尚未上传，请恢复网络后重试');
     }
   }
 
   Future<List<int>> downloadBytes(String path) async {
-    final request = await _httpClient.getUrl(Uri.parse('$baseUrl$path'));
-    if (accessToken != null) {
-      request.headers.set(
-        HttpHeaders.authorizationHeader,
-        'Bearer $accessToken',
-      );
-    }
-    final response = await request.close();
+    final response = await _httpClient.get(
+      Uri.parse('$baseUrl$path'),
+      headers: {
+        if (accessToken != null) 'Authorization': 'Bearer $accessToken',
+      },
+    );
     if (response.statusCode != 200) {
       throw ApiException('照片无法访问', statusCode: response.statusCode);
     }
-    return response.fold<List<int>>([], (all, chunk) => all..addAll(chunk));
+    return response.bodyBytes;
   }
 
   Future<Map<String, dynamic>> _request(
@@ -129,23 +129,21 @@ class ApiClient {
     bool allowQueue = true,
   }) async {
     try {
-      final request = await _httpClient.openUrl(
-        method,
-        Uri.parse('$baseUrl$path'),
-      );
-      request.headers.contentType = ContentType.json;
-      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      if (accessToken != null) {
-        request.headers.set(
-          HttpHeaders.authorizationHeader,
-          'Bearer $accessToken',
-        );
-      }
-      if (body != null) request.write(jsonEncode(body));
-      final response = await request.close().timeout(
-        const Duration(seconds: 15),
-      );
-      final raw = await response.transform(utf8.decoder).join();
+      final uri = Uri.parse('$baseUrl$path');
+      final headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        if (accessToken != null) 'Authorization': 'Bearer $accessToken',
+      };
+      final encoded = body == null ? null : jsonEncode(body);
+      final response = await switch (method) {
+        'POST' => _httpClient.post(uri, headers: headers, body: encoded),
+        'PATCH' => _httpClient.patch(uri, headers: headers, body: encoded),
+        'PUT' => _httpClient.put(uri, headers: headers, body: encoded),
+        'DELETE' => _httpClient.delete(uri, headers: headers),
+        _ => _httpClient.get(uri, headers: headers),
+      }.timeout(const Duration(seconds: 15));
+      final raw = response.body;
       final json = raw.isEmpty
           ? <String, dynamic>{}
           : jsonDecode(raw) as Map<String, dynamic>;
@@ -161,12 +159,10 @@ class ApiClient {
       return json;
     } on ApiException {
       rethrow;
-    } on SocketException {
+    } on http.ClientException {
       return _offlineFallback(method, path, body, allowQueue);
     } on TimeoutException {
       return _offlineFallback(method, path, body, allowQueue);
-    } on HandshakeException {
-      throw const ApiException('服务器安全连接验证失败');
     } on FormatException {
       throw const ApiException('服务器返回了无法识别的数据');
     }

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { AppConfig } from '../../config.js';
 import { AppError, unauthorized } from '../../errors.js';
 import { createAccessToken, authenticate } from '../../auth.js';
+import { hashPassword, verifyPassword } from '../../passwords.js';
 import { familyRoles } from '../../types.js';
 import { FamilyRepository } from './repository.js';
 
@@ -13,17 +14,36 @@ export async function registerFamilyRoutes(app: FastifyInstance, options: { repo
   const { repository, config } = options;
   const auth = authenticate(config.JWT_SECRET);
 
-  app.post('/api/v1/auth/request-code', async (request, reply) => {
-    const body=z.object({phone:z.string().regex(/^\+?[0-9]{6,20}$/)}).parse(request.body);const code=await repository.createLoginCode(body.phone,config.JWT_SECRET);
-    if(config.NODE_ENV==='production'){
-      if(!config.SMS_WEBHOOK_URL)throw new AppError(503,'SMS_NOT_CONFIGURED','短信服务尚未配置');
-      const response=await fetch(config.SMS_WEBHOOK_URL,{method:'POST',headers:{'content-type':'application/json',...(config.SMS_WEBHOOK_TOKEN?{authorization:`Bearer ${config.SMS_WEBHOOK_TOKEN}`}:{})},body:JSON.stringify({phone:body.phone,code,template:'family_os_login',expiresInMinutes:5})});
-      if(!response.ok)throw new AppError(502,'SMS_SEND_FAILED','验证码发送失败，请稍后重试');
-    }
-    reply.code(202);return{data:{expiresInSeconds:300,...(config.NODE_ENV==='development'&&config.ALLOW_DEV_LOGIN?{debugCode:code}:{})}};
+  const accountField = z.string().trim().min(3).max(32).regex(/^[\w\u4e00-\u9fa5]+$/, '账号只能包含字母、数字、下划线或中文');
+  const passwordField = z.string().min(8).max(72);
+
+  app.post('/api/v1/auth/register', async (request, reply) => {
+    const body = z.object({
+      account: accountField,
+      password: passwordField,
+      displayName: z.string().trim().min(1).max(80),
+    }).parse(request.body);
+    const user = await repository.registerAccount(body.account, body.displayName, hashPassword(body.password));
+    const accessToken = await createAccessToken({ userId: user.id, phone: user.phone }, config.JWT_SECRET);
+    reply.code(201);
+    return { data: { user, accessToken } };
   });
 
-  app.post('/api/v1/auth/verify-code',async request=>{const body=z.object({phone:z.string().regex(/^\+?[0-9]{6,20}$/),code:z.string().regex(/^\d{6}$/),displayName:z.string().trim().min(1).max(80)}).parse(request.body);const user=await repository.verifyLoginCode(body.phone,body.code,body.displayName,config.JWT_SECRET);const accessToken=await createAccessToken({userId:user.id,phone:user.phone},config.JWT_SECRET);return{data:{user,accessToken}};});
+  app.post('/api/v1/auth/login', async (request) => {
+    const body = z.object({
+      account: accountField,
+      password: passwordField,
+    }).parse(request.body);
+    const user = await repository.findAccount(body.account);
+    if (user && !user.passwordHash) {
+      throw new AppError(401, 'PASSWORD_NOT_SET', '这个账号还没有设置密码，请先注册');
+    }
+    if (!user?.passwordHash || !verifyPassword(body.password, user.passwordHash)) {
+      throw new AppError(401, 'INVALID_CREDENTIALS', '账号或密码不正确');
+    }
+    const accessToken = await createAccessToken({ userId: user.id, phone: user.phone }, config.JWT_SECRET);
+    return { data: { user: { id: user.id, phone: user.phone, displayName: user.displayName }, accessToken } };
+  });
 
   app.post('/api/v1/auth/dev-login', async (request) => {
     if (!config.ALLOW_DEV_LOGIN || config.NODE_ENV === 'production') {

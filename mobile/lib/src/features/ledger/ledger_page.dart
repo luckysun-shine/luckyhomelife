@@ -4,10 +4,16 @@ import 'package:uuid/uuid.dart';
 import '../../core/api_client.dart';
 import '../../core/session_controller.dart';
 import '../../theme.dart';
+import '../../widgets/ui.dart';
 
 class LedgerPage extends StatefulWidget {
-  const LedgerPage({super.key, required this.session});
+  const LedgerPage({
+    super.key,
+    required this.session,
+    this.openComposer = false,
+  });
   final SessionController session;
+  final bool openComposer;
   @override
   State<LedgerPage> createState() => _LedgerPageState();
 }
@@ -20,7 +26,9 @@ class _LedgerPageState extends State<LedgerPage> {
   @override
   void initState() {
     super.initState();
-    load();
+    load().whenComplete(() {
+      if (widget.openComposer && mounted && ledgers.isNotEmpty) add();
+    });
   }
 
   Future<void> load() async {
@@ -58,187 +66,235 @@ class _LedgerPageState extends State<LedgerPage> {
   }
 
   Future<void> add() async {
-    final amount = TextEditingController(), note = TextEditingController();
-    final ok = await showDialog<bool>(
+    final amount = TextEditingController();
+    final note = TextEditingController();
+    var type = 'expense';
+    var category = '餐饮食材';
+    final saved = await showModalBottomSheet<bool>(
       context: context,
-      builder: (x) => AlertDialog(
-        title: const Text('记一笔'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: amount,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) => Padding(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            20,
+            20,
+            MediaQuery.viewInsetsOf(sheetContext).bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('记一笔日常', style: Theme.of(sheetContext).textTheme.titleLarge),
+              const SizedBox(height: 12),
+              SegmentControl(
+                labels: const ['支出', '收入'],
+                index: type == 'expense' ? 0 : 1,
+                onChanged: (value) => setSheetState(
+                  () => type = value == 0 ? 'expense' : 'income',
+                ),
               ),
-              decoration: const InputDecoration(labelText: '金额'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: note,
-              decoration: const InputDecoration(labelText: '备注（选填）'),
-            ),
-          ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: amount,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(labelText: '金额 · 人民币'),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final item in const [
+                    '餐饮食材',
+                    '交通出行',
+                    '教育成长',
+                    '医疗健康',
+                    '其他',
+                  ])
+                    ChoiceChip(
+                      label: Text(item),
+                      selected: category == item,
+                      onSelected: (_) => setSheetState(() => category = item),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: note,
+                decoration: const InputDecoration(labelText: '备注（选填）'),
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: () => Navigator.pop(sheetContext, true),
+                child: Text(type == 'expense' ? '保存这笔支出' : '保存这笔收入'),
+              ),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(x, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(x, true),
-            child: const Text('保存'),
-          ),
-        ],
       ),
     );
     final value = double.tryParse(amount.text);
-    if (ok == true && value != null && value > 0) {
+    final noteText = note.text.trim();
+    amount.dispose();
+    note.dispose();
+    if (saved == true && value != null && value > 0) {
       await widget.session.api.post(
         '/api/v1/families/${widget.session.selectedFamilyId}/transactions',
         {
           'ledgerId': ledgers.first['id'],
-          'type': 'expense',
+          'type': type,
           'amountMinor': (value * 100).round(),
           'currency': 'CNY',
-          'category': '其他',
+          'category': category,
           'occurredAt': DateTime.now().toUtc().toIso8601String(),
-          'note': note.text.trim(),
+          'note': noteText,
           'idempotencyKey': const Uuid().v4(),
         },
       );
+      if (mounted) await showAppSnackBar(context, '这笔账已记下');
       await load();
     }
   }
 
   @override
-  Widget build(BuildContext c) {
+  Widget build(BuildContext context) {
     final spend = items
-        .where((e) => e['type'] == 'expense')
-        .fold<int>(0, (a, e) => a + int.parse(e['amountMinor'].toString()));
+        .where((item) => item['type'] == 'expense')
+        .fold<int>(
+          0,
+          (sum, item) => sum + int.parse(item['amountMinor'].toString()),
+        );
+    final income = items
+        .where((item) => item['type'] == 'income')
+        .fold<int>(
+          0,
+          (sum, item) => sum + int.parse(item['amountMinor'].toString()),
+        );
+    final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('过日子，心里有数')),
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : error != null
-          ? Center(child: Text(error!))
+          ? ErrorRetry(message: error!, onRetry: load)
           : RefreshIndicator(
               onRefresh: load,
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
+                padding: const EdgeInsets.fromLTRB(20, 28, 20, 28),
                 children: [
-                  Text(
-                    '家庭账本 · ${DateFormat('yyyy年 M月').format(DateTime.now())}',
-                    style: Theme.of(c).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(c).colorScheme.onSurfaceVariant,
+                  PageHeader(
+                    eyebrow:
+                        '${widget.session.selectedFamily?.name ?? '家庭账本'} · ${DateFormat('yyyy年 M月').format(DateTime.now())}',
+                    title: '过日子，心里有数',
+                  ),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(22),
+                    decoration: BoxDecoration(
+                      color: brandTealDeep,
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '本月家庭支出 · 人民币',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '¥ ${(spend / 100).toStringAsFixed(2)}',
+                          style: theme.textTheme.displaySmall?.copyWith(
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          '收入 ¥ ${(income / 100).toStringAsFixed(2)}    结余 ¥ ${((income - spend) / 100).toStringAsFixed(2)}',
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: brandTeal,
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(22),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            '本月家庭支出 · 人民币',
-                            style: TextStyle(color: Colors.white70),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            '¥ ${(spend / 100).toStringAsFixed(2)}',
-                            style: Theme.of(c).textTheme.displaySmall?.copyWith(
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          Text(
-                            '${items.length} 笔共同账目',
-                            style: const TextStyle(color: Colors.white70),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
                   FilledButton.icon(
-                    onPressed: add,
+                    onPressed: ledgers.isEmpty ? null : add,
                     icon: const Icon(Icons.add_rounded),
                     label: const Text('记一笔日常'),
-                    style: FilledButton.styleFrom(backgroundColor: brandCoral),
-                  ),
-                  const SizedBox(height: 22),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('最近流水', style: Theme.of(c).textTheme.titleLarge),
-                      Text(
-                        '本月 ${items.length} 笔',
-                        style: Theme.of(
-                          c,
-                        ).textTheme.bodySmall?.copyWith(color: brandTeal),
-                      ),
-                    ],
                   ),
                   const SizedBox(height: 8),
+                  SectionTitle('最近流水', meta: '本月 ${items.length} 笔'),
                   if (items.isEmpty)
-                    const Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(20),
-                        child: Text('还没有账目'),
+                    const EmptyState(
+                      icon: Icons.account_balance_wallet_outlined,
+                      message: '还没有账目。把今天的一笔开销记下来。',
+                    )
+                  else
+                    for (final raw in items)
+                      _TransactionTile(
+                        item: (raw as Map).cast<String, dynamic>(),
                       ),
-                    ),
-                  ...items.map(
-                    (e) => Card(
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 8,
-                        ),
-                        leading: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: e['type'] == 'expense'
-                                ? brandPeach
-                                : brandMist,
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: Icon(
-                            e['type'] == 'expense'
-                                ? Icons.shopping_bag_outlined
-                                : Icons.savings_outlined,
-                            color: e['type'] == 'expense'
-                                ? brandCoral
-                                : brandTeal,
-                          ),
-                        ),
-                        title: Text(
-                          e['category'],
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        subtitle: Text(
-                          '${DateFormat('M月d日').format(DateTime.parse(e['occurredAt']).toLocal())}${e['note'] == null ? '' : ' · ${e['note']}'}',
-                        ),
-                        trailing: Text(
-                          '${e['type'] == 'expense' ? '-' : '+'}¥ ${(int.parse(e['amountMinor'].toString()) / 100).toStringAsFixed(2)}',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            color: e['type'] == 'expense'
-                                ? brandCoral
-                                : brandTeal,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),
+    );
+  }
+}
+
+class _TransactionTile extends StatelessWidget {
+  const _TransactionTile({required this.item});
+  final Map<String, dynamic> item;
+
+  @override
+  Widget build(BuildContext context) {
+    final expense = item['type'] == 'expense';
+    final amount = int.parse(item['amountMinor'].toString());
+    final when = DateTime.parse(item['occurredAt'] as String).toLocal();
+    final note = item['note'] == null || '${item['note']}'.isEmpty
+        ? ''
+        : ' · ${item['note']}';
+    return SoftCard(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: expense ? brandPeach : brandMist,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(
+              expense ? Icons.shopping_bag_outlined : Icons.savings_outlined,
+              color: expense ? brandCoralDeep : brandTealDeep,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${item['category']}',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                Text(
+                  '${DateFormat('M月d日 HH:mm').format(when)}$note',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          Text(
+            '${expense ? '-' : '+'}¥ ${(amount / 100).toStringAsFixed(2)}',
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: expense ? brandCoralDeep : brandTealDeep,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

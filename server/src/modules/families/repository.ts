@@ -1,7 +1,7 @@
-import { createHash, randomBytes, randomInt } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import type { DatabasePool } from '../../database/pool.js';
-import { AppError, conflict, forbidden, notFound } from '../../errors.js';
+import { conflict, forbidden, notFound } from '../../errors.js';
 import type { FamilyRole } from '../../types.js';
 import { can, type FamilyAction } from './permissions.js';
 
@@ -18,15 +18,41 @@ export class FamilyRepository {
     return result.rows[0] as { id: string; phone: string; displayName: string };
   }
 
-  async createLoginCode(phone:string,secret:string){
-    const recent=await this.pool.query(`SELECT count(*)::int AS count FROM login_codes WHERE phone=$1 AND created_at>now()-interval '10 minutes'`,[phone]);
-    if(recent.rows[0].count>=5)throw new AppError(429,'TOO_MANY_REQUESTS','验证码请求过于频繁，请稍后再试');
-    const code=randomInt(100000,1000000).toString();const hash=createHash('sha256').update(`${phone}:${code}:${secret}`).digest('hex');
-    await this.pool.query(`INSERT INTO login_codes(phone,code_hash,expires_at) VALUES($1,$2,now()+interval '5 minutes')`,[phone,hash]);return code;
+  async registerAccount(account: string, displayName: string, passwordHash: string) {
+    const existing = await this.findAccount(account);
+    if (existing?.passwordHash) throw conflict('这个账号已经注册');
+    if (existing) {
+      const result = await this.pool.query(
+        `UPDATE users SET display_name = $2, password_hash = $3, updated_at = now()
+         WHERE id = $1
+         RETURNING id, phone, display_name AS "displayName"`,
+        [existing.id, displayName, passwordHash],
+      );
+      return result.rows[0] as { id: string; phone: string; displayName: string };
+    }
+    try {
+      const result = await this.pool.query(
+        `INSERT INTO users(phone, display_name, password_hash)
+         VALUES($1, $2, $3)
+         RETURNING id, phone, display_name AS "displayName"`,
+        [account, displayName, passwordHash],
+      );
+      return result.rows[0] as { id: string; phone: string; displayName: string };
+    } catch (error) {
+      if (isUniqueViolation(error)) throw conflict('这个账号已经注册');
+      throw error;
+    }
   }
 
-  async verifyLoginCode(phone:string,code:string,displayName:string,secret:string){
-    const client=await this.pool.connect();try{await client.query('BEGIN');const result=await client.query(`SELECT id,code_hash,attempts FROM login_codes WHERE phone=$1 AND consumed_at IS NULL AND expires_at>now() ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,[phone]);const challenge=result.rows[0];if(!challenge)throw new AppError(400,'CODE_INVALID','验证码无效或已过期');if(challenge.attempts>=5)throw new AppError(429,'CODE_LOCKED','验证码尝试次数过多，请重新获取');const hash=createHash('sha256').update(`${phone}:${code}:${secret}`).digest('hex');if(hash!==challenge.code_hash){await client.query('UPDATE login_codes SET attempts=attempts+1 WHERE id=$1',[challenge.id]);await client.query('COMMIT');throw new AppError(400,'CODE_INVALID','验证码不正确');}await client.query('UPDATE login_codes SET consumed_at=now() WHERE id=$1',[challenge.id]);const user=await client.query(`INSERT INTO users(phone,display_name) VALUES($1,$2) ON CONFLICT(phone) DO UPDATE SET display_name=COALESCE(NULLIF(users.display_name,''),EXCLUDED.display_name),updated_at=now() RETURNING id,phone,display_name AS "displayName"`,[phone,displayName]);await client.query('COMMIT');return user.rows[0] as{id:string;phone:string;displayName:string};}catch(error){if((error as AppError).code!=='CODE_INVALID'||(error as AppError).message!=='验证码不正确')await client.query('ROLLBACK');throw error;}finally{client.release();}
+  async findAccount(account: string) {
+    const result = await this.pool.query(
+      `SELECT id, phone, display_name AS "displayName", password_hash AS "passwordHash"
+       FROM users WHERE phone = $1`,
+      [account],
+    );
+    return result.rows[0] as
+      | { id: string; phone: string; displayName: string; passwordHash: string | null }
+      | undefined;
   }
 
   async listFamilies(userId: string) {
@@ -265,4 +291,13 @@ export class FamilyRepository {
       [familyId, actorUserId, action, resourceType, resourceId],
     );
   }
+}
+
+function isUniqueViolation(error: unknown) {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: string }).code === '23505'
+  );
 }
