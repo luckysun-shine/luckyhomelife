@@ -1,0 +1,35 @@
+services:
+  api:
+    environment:
+      NODE_ENV: production
+      ALLOW_DEV_LOGIN: "false"
+    ports: []
+    expose:
+      - "8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+  postgres:
+    ports: []
+
+  redis:
+    ports: []
+
+  caddy:
+    image: caddy:2-alpine
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/caddy/data:/data
+      - ./data/caddy/config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+

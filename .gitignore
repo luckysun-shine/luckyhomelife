@@ -1,0 +1,13 @@
+node_modules/
+.npm-cache/
+.env
+dist/
+coverage/
+.dart_tool/
+.flutter-plugins*
+.packages
+build/
+ios/Pods/
+android/.gradle/
+data/
+*.log

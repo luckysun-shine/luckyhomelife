@@ -1,0 +1,98 @@
+name: family-os
+
+services:
+  api:
+    build:
+      context: ./server
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://family_os:${POSTGRES_PASSWORD}@postgres:5432/family_os
+      REDIS_URL: redis://redis:6379
+      MEDIA_ROOT: /data/media
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./data/media:/data/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "dist/healthcheck.js"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  worker:
+    build:
+      context: ./server
+    command: ["node", "dist/worker.js"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://family_os:${POSTGRES_PASSWORD}@postgres:5432/family_os
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: family_os
+      POSTGRES_USER: family_os
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U family_os -d family_os"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ./data/redis:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  backup:
+    image: postgres:17-alpine
+    profiles: ["maintenance"]
+    environment:
+      DATABASE_URL: postgres://family_os:${POSTGRES_PASSWORD}@postgres:5432/family_os
+    volumes:
+      - ./deploy:/scripts:ro
+      - ./data/media:/data/media:ro
+      - ./data/backups:/backups
+    command: ["sh", "/scripts/backup.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  restore:
+    image: postgres:17-alpine
+    profiles: ["maintenance"]
+    environment:
+      DATABASE_URL: postgres://family_os:${POSTGRES_PASSWORD}@postgres:5432/family_os
+    volumes:
+      - ./deploy:/scripts:ro
+      - ./data/media:/data/media
+      - ./data/backups:/backups:ro
+    entrypoint: ["sh", "/scripts/restore.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+networks:
+  default:
+    name: family-os-private
