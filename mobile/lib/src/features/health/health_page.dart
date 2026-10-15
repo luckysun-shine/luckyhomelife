@@ -234,9 +234,9 @@ class _HealthPageState extends State<HealthPage> {
         .where((member) => member['id'] != memberId)
         .toList();
     if (candidates.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先添加其他家庭成员')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先添加其他家庭成员')));
       return;
     }
     String granteeId = candidates.first['id'] as String;
@@ -269,8 +269,7 @@ class _HealthPageState extends State<HealthPage> {
                 title: const Text('允许编辑'),
                 subtitle: const Text('关闭时仅可查看'),
                 value: canWrite,
-                onChanged: (value) =>
-                    setDialogState(() => canWrite = value),
+                onChanged: (value) => setDialogState(() => canWrite = value),
               ),
             ],
           ),
@@ -297,9 +296,9 @@ class _HealthPageState extends State<HealthPage> {
       },
     );
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('健康档案授权已保存')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('健康档案授权已保存')));
     }
   }
 
@@ -310,7 +309,7 @@ class _HealthPageState extends State<HealthPage> {
     final plans = (data?['medicationPlans'] as List?) ?? [];
     return Scaffold(
       appBar: AppBar(
-        title: const Text('家庭健康档案'),
+        title: const Text('把关心，放在日常'),
         actions: [
           IconButton(
             tooltip: '档案授权',

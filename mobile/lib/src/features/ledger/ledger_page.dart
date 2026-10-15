@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/api_client.dart';
 import '../../core/session_controller.dart';
+import '../../theme.dart';
 
 class LedgerPage extends StatefulWidget {
   const LedgerPage({super.key, required this.session});
@@ -116,12 +117,7 @@ class _LedgerPageState extends State<LedgerPage> {
         .where((e) => e['type'] == 'expense')
         .fold<int>(0, (a, e) => a + int.parse(e['amountMinor'].toString()));
     return Scaffold(
-      appBar: AppBar(title: const Text('家庭账本')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: loading ? null : add,
-        icon: const Icon(Icons.add),
-        label: const Text('记一笔'),
-      ),
+      appBar: AppBar(title: const Text('过日子，心里有数')),
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : error != null
@@ -129,26 +125,66 @@ class _LedgerPageState extends State<LedgerPage> {
           : RefreshIndicator(
               onRefresh: load,
               child: ListView(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
                 children: [
-                  Card(
+                  Text(
+                    '家庭账本 · ${DateFormat('yyyy年 M月').format(DateTime.now())}',
+                    style: Theme.of(c).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(c).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: brandTeal,
+                      borderRadius: BorderRadius.circular(24),
+                    ),
                     child: Padding(
-                      padding: const EdgeInsets.all(20),
+                      padding: const EdgeInsets.all(22),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('本月支出'),
-                          const SizedBox(height: 8),
+                          const Text(
+                            '本月家庭支出 · 人民币',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                          const SizedBox(height: 12),
                           Text(
                             '¥ ${(spend / 100).toStringAsFixed(2)}',
-                            style: Theme.of(c).textTheme.headlineMedium,
+                            style: Theme.of(c).textTheme.displaySmall?.copyWith(
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          Text(
+                            '${items.length} 笔共同账目',
+                            style: const TextStyle(color: Colors.white70),
                           ),
                         ],
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  Text('最近流水', style: Theme.of(c).textTheme.titleLarge),
+                  const SizedBox(height: 20),
+                  FilledButton.icon(
+                    onPressed: add,
+                    icon: const Icon(Icons.add_rounded),
+                    label: const Text('记一笔日常'),
+                    style: FilledButton.styleFrom(backgroundColor: brandCoral),
+                  ),
+                  const SizedBox(height: 22),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('最近流水', style: Theme.of(c).textTheme.titleLarge),
+                      Text(
+                        '本月 ${items.length} 笔',
+                        style: Theme.of(
+                          c,
+                        ).textTheme.bodySmall?.copyWith(color: brandTeal),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
                   if (items.isEmpty)
                     const Card(
                       child: Padding(
@@ -159,12 +195,43 @@ class _LedgerPageState extends State<LedgerPage> {
                   ...items.map(
                     (e) => Card(
                       child: ListTile(
-                        title: Text(e['category']),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 8,
+                        ),
+                        leading: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: e['type'] == 'expense'
+                                ? brandPeach
+                                : brandMist,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Icon(
+                            e['type'] == 'expense'
+                                ? Icons.shopping_bag_outlined
+                                : Icons.savings_outlined,
+                            color: e['type'] == 'expense'
+                                ? brandCoral
+                                : brandTeal,
+                          ),
+                        ),
+                        title: Text(
+                          e['category'],
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
                         subtitle: Text(
                           '${DateFormat('M月d日').format(DateTime.parse(e['occurredAt']).toLocal())}${e['note'] == null ? '' : ' · ${e['note']}'}',
                         ),
                         trailing: Text(
                           '${e['type'] == 'expense' ? '-' : '+'}¥ ${(int.parse(e['amountMinor'].toString()) / 100).toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: e['type'] == 'expense'
+                                ? brandCoral
+                                : brandTeal,
+                          ),
                         ),
                       ),
                     ),

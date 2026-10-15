@@ -126,14 +126,27 @@ class _CalendarPageState extends State<CalendarPage> {
 
   Future<void> editEvent(Map<String, dynamic> event) async {
     final title = TextEditingController(text: event['title'] as String);
-    final ok = await showDialog<bool>(context: context, builder: (dialogContext) => AlertDialog(
-      title: const Text('编辑日程'),
-      content: TextField(controller: title, autofocus: true, decoration: const InputDecoration(labelText: '日程标题')),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('保存')),
-      ],
-    ));
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('编辑日程'),
+        content: TextField(
+          controller: title,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: '日程标题'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
     if (ok != true || title.text.trim().isEmpty) return;
     try {
       await widget.session.api.patch(
@@ -150,19 +163,32 @@ class _CalendarPageState extends State<CalendarPage> {
       );
       await load();
     } on ApiException catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
     }
   }
 
   Future<void> deleteEvent(Map<String, dynamic> event) async {
-    final ok = await showDialog<bool>(context: context, builder: (dialogContext) => AlertDialog(
-      title: const Text('删除日程'),
-      content: Text('确定删除“${event['title']}”吗？'),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('删除')),
-      ],
-    ));
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('删除日程'),
+        content: Text('确定删除“${event['title']}”吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
     if (ok != true) return;
     try {
       await widget.session.api.delete(
@@ -170,7 +196,11 @@ class _CalendarPageState extends State<CalendarPage> {
       );
       await load();
     } on ApiException catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
     }
   }
 
@@ -182,13 +212,17 @@ class _CalendarPageState extends State<CalendarPage> {
       );
       await load();
     } on ApiException catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
     }
   }
 
   @override
   Widget build(BuildContext c) => Scaffold(
-    appBar: AppBar(title: const Text('日历与任务')),
+    appBar: AppBar(title: const Text('把时间，留给家人')),
     body: loading
         ? const Center(child: CircularProgressIndicator())
         : error != null
@@ -196,8 +230,15 @@ class _CalendarPageState extends State<CalendarPage> {
         : RefreshIndicator(
             onRefresh: load,
             child: ListView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
               children: [
+                Text(
+                  '家庭日历 · ${DateFormat('yyyy年 M月').format(DateTime.now())}',
+                  style: Theme.of(c).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(c).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 18),
                 Row(
                   children: [
                     Expanded(
@@ -219,10 +260,9 @@ class _CalendarPageState extends State<CalendarPage> {
                 ),
                 const SizedBox(height: 20),
                 Text('本月日程', style: Theme.of(c).textTheme.titleLarge),
-                ...events.map(
-                  (raw) {
-                    final e = raw as Map<String, dynamic>;
-                    return Card(
+                ...events.map((raw) {
+                  final e = raw as Map<String, dynamic>;
+                  return Card(
                     child: ListTile(
                       title: Text(e['title']),
                       subtitle: Text(
@@ -231,7 +271,8 @@ class _CalendarPageState extends State<CalendarPage> {
                         ).format(DateTime.parse(e['startsAt']).toLocal()),
                       ),
                       trailing: PopupMenuButton<String>(
-                        onSelected: (action) => action == 'edit' ? editEvent(e) : deleteEvent(e),
+                        onSelected: (action) =>
+                            action == 'edit' ? editEvent(e) : deleteEvent(e),
                         itemBuilder: (_) => const [
                           PopupMenuItem(value: 'edit', child: Text('编辑')),
                           PopupMenuItem(value: 'delete', child: Text('删除')),
@@ -239,14 +280,12 @@ class _CalendarPageState extends State<CalendarPage> {
                       ),
                     ),
                   );
-                  },
-                ),
+                }),
                 const SizedBox(height: 16),
                 Text('未完成任务', style: Theme.of(c).textTheme.titleLarge),
-                ...tasks.map(
-                  (raw) {
-                    final e = raw as Map<String, dynamic>;
-                    return Card(
+                ...tasks.map((raw) {
+                  final e = raw as Map<String, dynamic>;
+                  return Card(
                     child: ListTile(
                       leading: Checkbox(
                         value: e['status'] == 'completed',
@@ -255,8 +294,7 @@ class _CalendarPageState extends State<CalendarPage> {
                       title: Text(e['title']),
                     ),
                   );
-                  },
-                ),
+                }),
               ],
             ),
           ),

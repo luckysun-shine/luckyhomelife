@@ -294,7 +294,10 @@ class _FamilyPageState extends State<FamilyPage> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(controller: name, decoration: const InputDecoration(labelText: '家庭称呼')),
+              TextField(
+                controller: name,
+                decoration: const InputDecoration(labelText: '家庭称呼'),
+              ),
               const SizedBox(height: 8),
               if (role != 'admin')
                 DropdownButtonFormField<String>(
@@ -307,86 +310,126 @@ class _FamilyPageState extends State<FamilyPage> {
                     DropdownMenuItem(value: 'child', child: Text('儿童')),
                     DropdownMenuItem(value: 'caregiver', child: Text('照护者')),
                   ],
-                  onChanged: (value) => setDialogState(() => role = value ?? role),
+                  onChanged: (value) =>
+                      setDialogState(() => role = value ?? role),
                 ),
-              if ((role == 'child' || role == 'teen') && guardianCandidates.isNotEmpty) ...[
+              if ((role == 'child' || role == 'teen') &&
+                  guardianCandidates.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  initialValue: guardianCandidates.any((item) => item['id'] == guardianId)
+                  initialValue:
+                      guardianCandidates.any((item) => item['id'] == guardianId)
                       ? guardianId
                       : null,
                   decoration: const InputDecoration(labelText: '监护人'),
                   items: guardianCandidates
-                      .map((item) => DropdownMenuItem<String>(
-                            value: item['id'] as String,
-                            child: Text(item['displayName'] as String),
-                          ))
+                      .map(
+                        (item) => DropdownMenuItem<String>(
+                          value: item['id'] as String,
+                          child: Text(item['displayName'] as String),
+                        ),
+                      )
                       .toList(),
-                  onChanged: (value) => setDialogState(() => guardianId = value),
+                  onChanged: (value) =>
+                      setDialogState(() => guardianId = value),
                 ),
               ],
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('取消')),
-            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('保存')),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('保存'),
+            ),
           ],
         ),
       ),
     );
     if (ok != true || name.text.trim().isEmpty) return;
-    await widget.session.api.patch(
-      '/api/v1/families/$_selectedFamilyId/members/${member['id']}',
-      {
-        'displayName': name.text.trim(),
-        if (member['role'] != 'admin') 'role': role,
-        if (member['role'] != 'admin' && (role == 'child' || role == 'teen'))
-          'guardianMemberId': guardianId,
-        if (member['role'] != 'admin' && role != 'child' && role != 'teen')
-          'guardianMemberId': null,
-      },
-    );
+    await widget.session.api
+        .patch('/api/v1/families/$_selectedFamilyId/members/${member['id']}', {
+          'displayName': name.text.trim(),
+          if (member['role'] != 'admin') 'role': role,
+          if (member['role'] != 'admin' && (role == 'child' || role == 'teen'))
+            'guardianMemberId': guardianId,
+          if (member['role'] != 'admin' && role != 'child' && role != 'teen')
+            'guardianMemberId': null,
+        });
     await _loadMembers();
     if (mounted) setState(() {});
   }
 
   Future<void> _removeMember(Map<String, dynamic> member) async {
-    final ok = await showDialog<bool>(context: context, builder: (dialogContext) => AlertDialog(
-      title: const Text('移除家庭成员'),
-      content: Text('确定将“${member['displayName']}”移出当前家庭吗？相关历史记录不会被删除。'),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('确认移除')),
-      ],
-    ));
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('移除家庭成员'),
+        content: Text('确定将“${member['displayName']}”移出当前家庭吗？相关历史记录不会被删除。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('确认移除'),
+          ),
+        ],
+      ),
+    );
     if (ok != true) return;
-    await widget.session.api.delete('/api/v1/families/$_selectedFamilyId/members/${member['id']}');
+    await widget.session.api.delete(
+      '/api/v1/families/$_selectedFamilyId/members/${member['id']}',
+    );
     await _loadMembers();
     if (mounted) setState(() {});
   }
 
   Future<void> _transferAdmin(Map<String, dynamic> member) async {
-    final ok = await showDialog<bool>(context: context, builder: (dialogContext) => AlertDialog(
-      title: const Text('交接家庭管理员'),
-      content: Text('将管理员交接给“${member['displayName']}”后，你会变为成人成员。是否继续？'),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('确认交接')),
-      ],
-    ));
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('交接家庭管理员'),
+        content: Text('将管理员交接给“${member['displayName']}”后，你会变为成人成员。是否继续？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('确认交接'),
+          ),
+        ],
+      ),
+    );
     if (ok != true) return;
-    await widget.session.api.post('/api/v1/families/$_selectedFamilyId/admin-transfer', {'targetMemberId': member['id']});
+    await widget.session.api.post(
+      '/api/v1/families/$_selectedFamilyId/admin-transfer',
+      {'targetMemberId': member['id']},
+    );
     await widget.session.refreshFamilies();
     await _loadFamilies();
   }
 
-  Future<void> _handleMemberAction(String action, Map<String, dynamic> member) async {
+  Future<void> _handleMemberAction(
+    String action,
+    Map<String, dynamic> member,
+  ) async {
     try {
       if (action == 'edit') await _editMember(member);
       if (action == 'remove') await _removeMember(member);
       if (action == 'transfer') await _transferAdmin(member);
     } on ApiException catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
     }
   }
 
@@ -394,7 +437,7 @@ class _FamilyPageState extends State<FamilyPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('家庭'),
+        title: const Text('我们这一家'),
         actions: [
           IconButton(
             onPressed: widget.session.logout,
@@ -424,7 +467,7 @@ class _FamilyPageState extends State<FamilyPage> {
           : RefreshIndicator(
               onRefresh: _loadFamilies,
               child: ListView(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
                 children: [
                   DropdownButtonFormField<String>(
                     initialValue: _selectedFamilyId,
@@ -461,16 +504,34 @@ class _FamilyPageState extends State<FamilyPage> {
                         subtitle: Text(_roleName(member['role'] as String)),
                         trailing: widget.session.selectedFamily?.role == 'admin'
                             ? PopupMenuButton<String>(
-                                onSelected: (action) => _handleMemberAction(action, member),
+                                onSelected: (action) =>
+                                    _handleMemberAction(action, member),
                                 itemBuilder: (_) => [
-                                  const PopupMenuItem(value: 'edit', child: Text('编辑成员')),
+                                  const PopupMenuItem(
+                                    value: 'edit',
+                                    child: Text('编辑成员'),
+                                  ),
                                   if (member['accountBound'] == true &&
-                                      member['id'] != widget.session.selectedFamily?.memberId &&
+                                      member['id'] !=
+                                          widget
+                                              .session
+                                              .selectedFamily
+                                              ?.memberId &&
                                       member['role'] != 'admin')
-                                    const PopupMenuItem(value: 'transfer', child: Text('交接管理员')),
-                                  if (member['id'] != widget.session.selectedFamily?.memberId &&
+                                    const PopupMenuItem(
+                                      value: 'transfer',
+                                      child: Text('交接管理员'),
+                                    ),
+                                  if (member['id'] !=
+                                          widget
+                                              .session
+                                              .selectedFamily
+                                              ?.memberId &&
                                       member['role'] != 'admin')
-                                    const PopupMenuItem(value: 'remove', child: Text('移除成员')),
+                                    const PopupMenuItem(
+                                      value: 'remove',
+                                      child: Text('移除成员'),
+                                    ),
                                 ],
                               )
                             : Icon(

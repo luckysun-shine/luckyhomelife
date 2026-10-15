@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="HomeLife OS white">
+  <g fill="#FFFFFF" stroke="#FFFFFF">
+    <path d="M78 248C92 137 168 67 278 62" fill="none" stroke-width="46" stroke-linecap="round"/>
+    <path d="M328 78C398 111 435 177 430 250" fill="none" stroke-width="46" stroke-linecap="round"/>
+    <circle cx="256" cy="247" r="68" stroke="none"/>
+    <path d="M55 341C117 283 186 279 274 337C202 374 126 394 57 389C45 374 45 356 55 341Z" stroke="none"/>
+    <path d="M178 421C252 331 343 282 457 315C436 379 348 430 178 421Z" stroke="none"/>
+  </g>
+</svg>

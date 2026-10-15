@@ -83,26 +83,31 @@ class _RecordsPageState extends State<RecordsPage> {
                   DropdownMenuItem(value: 'admins', child: Text('仅我和管理员')),
                   DropdownMenuItem(value: 'selected', child: Text('指定家庭成员')),
                 ],
-                onChanged: (value) => setSheetState(() => visibility = value ?? 'family'),
+                onChanged: (value) =>
+                    setSheetState(() => visibility = value ?? 'family'),
               ),
               if (visibility == 'selected')
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 160),
                   child: ListView(
                     shrinkWrap: true,
-                    children: members.map((member) => CheckboxListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(member['displayName'] as String),
-                      value: viewerIds.contains(member['id']),
-                      onChanged: (selected) => setSheetState(() {
-                        if (selected == true) {
-                          viewerIds.add(member['id'] as String);
-                        } else {
-                          viewerIds.remove(member['id']);
-                        }
-                      }),
-                    )).toList(),
+                    children: members
+                        .map(
+                          (member) => CheckboxListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(member['displayName'] as String),
+                            value: viewerIds.contains(member['id']),
+                            onChanged: (selected) => setSheetState(() {
+                              if (selected == true) {
+                                viewerIds.add(member['id'] as String);
+                              } else {
+                                viewerIds.remove(member['id']);
+                              }
+                            }),
+                          ),
+                        )
+                        .toList(),
                   ),
                 ),
               const SizedBox(height: 12),
@@ -159,7 +164,7 @@ class _RecordsPageState extends State<RecordsPage> {
 
   @override
   Widget build(BuildContext c) => Scaffold(
-    appBar: AppBar(title: const Text('家庭记录')),
+    appBar: AppBar(title: const Text('日子，有迹可循')),
     floatingActionButton: FloatingActionButton(
       onPressed: add,
       child: const Icon(Icons.add),
@@ -178,7 +183,7 @@ class _RecordsPageState extends State<RecordsPage> {
                     ],
                   )
                 : ListView.builder(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
                     itemCount: items.length,
                     itemBuilder: (x, i) {
                       final e = items[i];
@@ -215,7 +220,9 @@ class _RecordsPageState extends State<RecordsPage> {
                               Text(e['body'] ?? ''),
                               const SizedBox(height: 8),
                               Text(
-                                _visibilityName(e['visibility'] as String? ?? 'family'),
+                                _visibilityName(
+                                  e['visibility'] as String? ?? 'family',
+                                ),
                                 style: Theme.of(x).textTheme.bodySmall,
                               ),
                             ],
@@ -227,13 +234,15 @@ class _RecordsPageState extends State<RecordsPage> {
           ),
   );
 
-  String _visibilityName(String value) => const {
-    'family': '全家可见',
-    'self': '仅自己可见',
-    'admins': '仅我和管理员',
-    'selected': '指定成员可见',
-    'guardians': '本人和监护人可见',
-  }[value] ?? value;
+  String _visibilityName(String value) =>
+      const {
+        'family': '全家可见',
+        'self': '仅自己可见',
+        'admins': '仅我和管理员',
+        'selected': '指定成员可见',
+        'guardians': '本人和监护人可见',
+      }[value] ??
+      value;
 }
 
 class _ProtectedPhoto extends StatelessWidget {
